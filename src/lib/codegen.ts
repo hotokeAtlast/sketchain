@@ -1,40 +1,64 @@
-import type { ContractInfo, FnInfo, ParseResult } from "./parseSolidity"
+import type {
+  ContractInfo,
+  FnMember,
+  Member,
+  ParamInfo,
+  ParseResult,
+  VarMember,
+} from "./parseSolidity"
 
-function fnToSol(f: FnInfo): string {
+const param = (p: ParamInfo): string =>
+  [p.type, p.storage, p.name].filter(Boolean).join(" ")
+
+function fnToSol(f: FnMember): string {
   const head =
-    f.kind === "constructor"
+    f.fnKind === "constructor"
       ? "constructor"
-      : f.kind === "fallback"
+      : f.fnKind === "fallback"
         ? "fallback"
-        : f.kind === "receive"
+        : f.fnKind === "receive"
           ? "receive"
           : `function ${f.name}`
   const sig = [
-    `${head}(${f.params.join(", ")})`,
-    f.kind === "function" ? f.visibility : "",
-    f.stateMutability,
+    `${head}(${f.params.map(param).join(", ")})`,
+    f.fnKind === "function" ? f.visibility : "",
+    f.stateMutability && f.stateMutability !== "nonpayable"
+      ? f.stateMutability
+      : "",
     ...f.modifiers,
-    f.returns.length ? `returns (${f.returns.join(", ")})` : "",
+    f.returns.length ? `returns (${f.returns.map(param).join(", ")})` : "",
   ]
     .filter(Boolean)
     .join(" ")
   if (f.body === null) return `    ${sig};`
-  const body = f.body.replace(/^\n+|\s+$/g, "")
-  return `    ${sig} {\n${body}\n    }`
+  return `    ${sig} {\n${f.body.replace(/^\n+|\s+$/g, "")}\n    }`
 }
 
+function varToSol(v: VarMember): string {
+  const decl = [v.type, v.visibility, v.name].filter(Boolean).join(" ")
+  return `    ${decl}${v.initializer != null ? " = " + v.initializer.trim() : ""};`
+}
+
+function memberToSol(m: Member): string | null {
+  if (m.removed) return null
+  if (!m.dirty) return m.raw
+  if (m.kind === "function") return fnToSol(m)
+  if (m.kind === "variable") return varToSol(m)
+  return m.raw
+}
+
+const isClean = (c: ContractInfo): boolean =>
+  !c.headerDirty && c.members.every((m) => !m.dirty && !m.removed)
+
 export function contractToSol(c: ContractInfo): string {
+  if (isClean(c)) return c.raw
   const kw = c.kind === "abstract" ? "abstract contract" : c.kind
   const header = `${kw} ${c.name}${c.bases.length ? " is " + c.bases.join(", ") : ""} {`
-  const members: string[] = []
-  for (const v of c.variables)
-    members.push(
-      `    ${v.type}${v.visibility ? " " + v.visibility : ""} ${v.name};`,
-    )
-  for (const e of c.events)
-    members.push(`    event ${e.name}(${e.params.join(", ")});`)
-  for (const f of c.functions) members.push(fnToSol(f))
-  return `${header}\n${members.join("\n\n")}\n}`
+  const body = c.members
+    .map(memberToSol)
+    .filter((s): s is string => s !== null)
+    .join("\n\n")
+  return `${header}\n${body}\n}`
 }
 
 export function modelToSolidity(p: ParseResult): string {

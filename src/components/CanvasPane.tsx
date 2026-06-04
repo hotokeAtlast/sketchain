@@ -2,9 +2,9 @@ import ReactFlow, { Background, Controls, MiniMap } from "reactflow"
 import type { Node, Edge } from "reactflow"
 import ContractNode from "./ContractNode"
 import type { ContractInfo } from "../lib/parseSolidity"
+import type { ContractNodeData } from "../lib/astToGraph"
 
 const nodeTypes = { contract: ContractNode }
-type ContractNodeData = { contract: ContractInfo }
 
 export default function CanvasPane({
   nodes,
